@@ -1,9 +1,5 @@
-import puppeteer from "puppeteer-core"
-import chromium from "chrome-aws-lambda"
-import * as cheerio from "cheerio"
-import { Readability } from "@mozilla/readability"
-import { JSDOM } from "jsdom"
-import { convert } from "html-to-text"
+// This file contains a simplified version of the web scraper
+// that works with Vercel's serverless functions
 
 export interface ScrapedData {
   title: string
@@ -16,7 +12,7 @@ export interface ScrapedData {
   author?: string
   datePublished?: string
   structuredData?: any
-  screenshot: string
+  screenshot?: string
   wordCount: number
   readingTime: number
   hasAuthorInfo: boolean
@@ -26,65 +22,43 @@ export interface ScrapedData {
 }
 
 export async function scrapeWebpage(url: string): Promise<ScrapedData> {
-  let browser
-
   try {
-    // Launch browser
-    browser = await puppeteer.launch({
-      args: chromium.args,
-      executablePath: await chromium.executablePath,
-      headless: true,
+    // Fetch the HTML content
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+      },
     })
 
-    const page = await browser.newPage()
+    if (!response.ok) {
+      throw new Error(`Failed to fetch webpage: ${response.status} ${response.statusText}`)
+    }
 
-    // Set viewport for consistent screenshots
-    await page.setViewport({ width: 1280, height: 800 })
+    const html = await response.text()
 
-    // Navigate to the URL
-    await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 })
-
-    // Take a screenshot
-    const screenshot = await page.screenshot({ encoding: "base64" })
-
-    // Get the HTML content
-    const html = await page.content()
-
-    // Extract structured data
-    const structuredData = await page.evaluate(() => {
-      const elements = document.querySelectorAll('script[type="application/ld+json"]')
-      const data = []
-      elements.forEach((el) => {
-        try {
-          data.push(JSON.parse(el.textContent || ""))
-        } catch (e) {
-          // Ignore invalid JSON
-        }
-      })
-      return data
-    })
-
-    // Extract content using Readability
+    // Use a server-side HTML parser
+    const { JSDOM } = require("jsdom")
     const dom = new JSDOM(html, { url })
-    const reader = new Readability(dom.window.document)
-    const article = reader.parse()
+    const document = dom.window.document
 
-    // Use cheerio for additional parsing
-    const $ = cheerio.load(html)
+    // Extract basic metadata
+    const title = document.querySelector("title")?.textContent || ""
+    const description = document.querySelector('meta[name="description"]')?.getAttribute("content") || ""
 
     // Extract headings
     const headings: string[] = []
-    $("h1, h2, h3, h4, h5, h6").each((_, el) => {
-      headings.push($(el).text().trim())
+    document.querySelectorAll("h1, h2, h3, h4, h5, h6").forEach((el) => {
+      headings.push(el.textContent?.trim() || "")
     })
 
     // Extract links
     const links: { text: string; url: string }[] = []
-    $("a").each((_, el) => {
-      const href = $(el).attr("href")
+    document.querySelectorAll("a").forEach((el) => {
+      const href = el.getAttribute("href")
       if (href && !href.startsWith("#") && !href.startsWith("javascript:")) {
         links.push({
-          text: $(el).text().trim(),
+          text: el.textContent?.trim() || "",
           url: href,
         })
       }
@@ -92,11 +66,11 @@ export async function scrapeWebpage(url: string): Promise<ScrapedData> {
 
     // Extract images
     const images: { alt: string; src: string }[] = []
-    $("img").each((_, el) => {
-      const src = $(el).attr("src")
+    document.querySelectorAll("img").forEach((el) => {
+      const src = el.getAttribute("src")
       if (src) {
         images.push({
-          alt: $(el).attr("alt") || "",
+          alt: el.getAttribute("alt") || "",
           src,
         })
       }
@@ -104,8 +78,6 @@ export async function scrapeWebpage(url: string): Promise<ScrapedData> {
 
     // Extract author information
     let author = ""
-
-    // Try common author selectors
     const authorSelectors = [
       'meta[name="author"]',
       'meta[property="article:author"]',
@@ -116,12 +88,12 @@ export async function scrapeWebpage(url: string): Promise<ScrapedData> {
     ]
 
     for (const selector of authorSelectors) {
-      if ($(selector).length) {
-        const el = $(selector)
-        if (el.attr("content")) {
-          author = el.attr("content") || ""
+      const el = document.querySelector(selector)
+      if (el) {
+        if (el.getAttribute("content")) {
+          author = el.getAttribute("content") || ""
         } else {
-          author = el.text().trim()
+          author = el.textContent?.trim() || ""
         }
         if (author) break
       }
@@ -139,42 +111,62 @@ export async function scrapeWebpage(url: string): Promise<ScrapedData> {
     ]
 
     for (const selector of dateSelectors) {
-      if ($(selector).length) {
-        const el = $(selector)
-        if (el.attr("content")) {
-          datePublished = el.attr("content") || ""
-        } else if (el.attr("datetime")) {
-          datePublished = el.attr("datetime") || ""
+      const el = document.querySelector(selector)
+      if (el) {
+        if (el.getAttribute("content")) {
+          datePublished = el.getAttribute("content") || ""
+        } else if (el.getAttribute("datetime")) {
+          datePublished = el.getAttribute("datetime") || ""
         } else {
-          datePublished = el.text().trim()
+          datePublished = el.textContent?.trim() || ""
         }
         if (datePublished) break
       }
     }
 
-    // Convert HTML to plain text for analysis
-    const textContent = convert(article?.content || html, {
-      wordwrap: false,
-      selectors: [
-        { selector: "a", options: { ignoreHref: true } },
-        { selector: "img", format: "skip" },
-      ],
+    // Extract structured data
+    const structuredData: any[] = []
+    document.querySelectorAll('script[type="application/ld+json"]').forEach((el) => {
+      try {
+        structuredData.push(JSON.parse(el.textContent || ""))
+      } catch (e) {
+        // Ignore invalid JSON
+      }
     })
 
+    // Extract main content using a basic readability algorithm
+    let content = ""
+    let textContent = ""
+
+    try {
+      const { Readability } = require("@mozilla/readability")
+      const reader = new Readability(dom.window.document)
+      const article = reader.parse()
+
+      if (article) {
+        content = article.content
+        textContent = article.textContent
+      }
+    } catch (error) {
+      // Fallback to body content if readability fails
+      content = document.body.innerHTML
+      textContent = document.body.textContent || ""
+    }
+
     // Calculate word count and reading time
-    const wordCount = textContent.split(/\s+/).length
+    const wordCount = textContent.split(/\s+/).filter(Boolean).length
     const readingTime = Math.ceil(wordCount / 200) // Assuming 200 words per minute
 
     // Check for key quality indicators
     const hasAuthorInfo = !!author
     const hasDates = !!datePublished
-    const hasReferences = $('a[href^="http"]').length > 0
+    const hasReferences = document.querySelectorAll('a[href^="http"]').length > 0
     const hasSchema = structuredData.length > 0
 
     return {
-      title: article?.title || $("title").text().trim(),
-      description: $('meta[name="description"]').attr("content") || "",
-      content: article?.content || html,
+      title,
+      description,
+      content,
       textContent,
       headings,
       links,
@@ -182,7 +174,6 @@ export async function scrapeWebpage(url: string): Promise<ScrapedData> {
       author,
       datePublished,
       structuredData,
-      screenshot: `data:image/png;base64,${screenshot}`,
       wordCount,
       readingTime,
       hasAuthorInfo,
@@ -193,10 +184,6 @@ export async function scrapeWebpage(url: string): Promise<ScrapedData> {
   } catch (error) {
     console.error("Error scraping webpage:", error)
     throw new Error(`Failed to scrape webpage: ${error.message}`)
-  } finally {
-    if (browser) {
-      await browser.close()
-    }
   }
 }
 

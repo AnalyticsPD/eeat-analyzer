@@ -29,7 +29,7 @@ interface AnalysisResultsProps {
       weaknesses: string[]
       recommendations: string[]
     }
-    screenshot: string
+    screenshot?: string
     url: string
     metadata?: {
       title: string
@@ -118,21 +118,22 @@ export function AnalysisResults({ results }: AnalysisResultsProps) {
         />
       </div>
 
-      {results.screenshot && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Webpage Screenshot</CardTitle>
-            <CardDescription>Visual representation analyzed</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <img
-              src={results.screenshot || "/placeholder.svg"}
-              alt="Webpage screenshot"
-              className="w-full rounded-md border"
-            />
-          </CardContent>
-        </Card>
-      )}
+      <Card>
+        <CardHeader>
+          <CardTitle>Analyzed URL</CardTitle>
+          <CardDescription>The webpage that was analyzed</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <a
+            href={results.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:underline break-all"
+          >
+            {results.url}
+          </a>
+        </CardContent>
+      </Card>
 
       <Tabs defaultValue="eeat">
         <TabsList className="grid w-full grid-cols-3">

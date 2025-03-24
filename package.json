@@ -58,13 +58,6 @@
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.6",
     "zod": "^3.24.1",
-    "puppeteer-core": "latest",
-    "canvas": "latest",
-    "chrome-aws-lambda": "latest",
-    "cheerio": "latest",
-    "@mozilla/readability": "latest",
-    "jsdom": "latest",
-    "html-to-text": "latest",
     "ai": "latest",
     "@ai-sdk/openai": "latest"
   },

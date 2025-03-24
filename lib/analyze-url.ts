@@ -4,7 +4,7 @@ import { scrapeWebpage, type ScrapedData } from "./web-scraper"
 
 export async function analyzeUrl(url: string) {
   try {
-    // Scrape the webpage to get content and screenshot
+    // Scrape the webpage to get content
     const scrapedData = await scrapeWebpage(url)
 
     // Use AI to analyze the content against EEAT guidelines
@@ -12,7 +12,6 @@ export async function analyzeUrl(url: string) {
 
     return {
       ...analysis,
-      screenshot: scrapedData.screenshot,
       url,
       metadata: {
         title: scrapedData.title,
